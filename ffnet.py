@@ -1,17 +1,42 @@
+# Isaac Hogan
+# 10188271
+# Group 27
+# COGS400
+# 
+# Group Project - Feed Forward Network for Current Rating Bias
+
 import tensorflow as tf
 import numpy as np
-import csv
+import csv, copy
 
-def readData( file ):
+def readData( file, maxLines ):
 	print "\nreading data..."
 	data = []
 	with open(file, "r") as data_file:
 		data_reader = csv.reader(data_file, delimiter=',')
 		labels = next(data_reader)
+		lineNum = 0
 		for line in data_reader:
-			newline = map(float, line)
-			data.append(newline)	
+			lineNum += 1
+			if lineNum <= maxLines:
+				newline = map(float, line)
+				data.append(newline)
+			else:
+				break
 	return data
+
+
+	
+def writeCSV( data, file ):
+	print "\nwriting CSV..."
+	data.sort(key=lambda x: x[0])
+	with open(file, "w") as data_file:
+		for row in data:
+			line = ""
+			for element in row:
+				line += str(element) + ","
+			line = line[:-1] + "\n"
+			data_file.write(line)
 	
 def splitData( labelColumn, data ):
 	print "\nspliting data..."
@@ -38,6 +63,63 @@ def normalize(data):
 			else:
 				data[entry][val] = 0
 	return data
+	
+def addTimeRating( data ):
+	print "\nadding rating at review time..."
+	data.sort(key=lambda x: x[3])
+	newData = []
+	dataLen = len(data)
+	current = 0
+	for row in data:
+		current += 1
+		print current, "of", dataLen
+		movieID = row[1]
+		timestamp = row[3]
+		movieReviews = 0
+		totalReview = 0
+		for row2 in data:
+			if timestamp > row2[3]:
+				if movieID == row2[1]:
+					movieReviews += 1
+					totalReview += row2[2]
+			else:
+				break
+		if movieReviews == 0:
+			newData.append(row + [0])
+		else:
+			newData.append(row + [float(totalReview) / float(movieReviews)])
+	return newData
+		
+def addAvgRating( data ):
+	print "\nadding average rating..."
+	newData = []
+	dataLen = len(data)
+	current = 0
+	for row in data:
+		current += 1
+		print current, "of", dataLen
+		movieID = row[1]
+		movieReviews = 0
+		totalReview = 0
+		for row2 in data:
+			if movieID == row2[1]:
+				movieReviews += 1
+				totalReview += row2[2]
+		if movieReviews == 0:
+			newData.append(row + [0])
+		else:
+			newData.append(row + [float(totalReview) / float(movieReviews)])
+	return newData		
+	
+#removes a column from a dataset
+def removeCol(matrix, address):
+	newMatrix = []
+	for row in range(len(matrix)):
+		newMatrix.append([])
+		for col in range(len(matrix[row])):
+			if col != address:
+				newMatrix[row].append(matrix[row][col])
+	return newMatrix
 	
 #Usage = trainModel( <lables_list>, <data_rows_list>, <#_hidden_nodes>, <learning_rate>, <#_training_epocs> )
 #Returns: python list of all weights 	
@@ -125,13 +207,16 @@ batch_size = 1000
 epochs = 1
 label_column = 3
 
-ratings_data = readData( filename )
-labels, rows = splitData( label_column, ratings_data )
-rows = normalize(rows)
-model = trainModel( labels, rows, hidden, lrate, batch_size, epochs ) 
-sse = testModel( labels, rows, model, hidden)
-print sse
-			
+ratings_data = readData( "../project_data/ratings.csv", 1000000 )
+ratings_data = addAvgRating( ratings_data )
+ratings_data = addTimeRating( ratings_data )
+writeCSV( ratings_data, ".../project_data/ratings_avgs.csv" )
+
+#labels, rows = splitData( label_column, ratings_data )
+#rows = normalize(rows)
+#model = trainModel( labels, rows, hidden, lrate, batch_size, epochs ) 
+#sse = testModel( labels, rows, model, hidden)
+		
 			
 			
 			
