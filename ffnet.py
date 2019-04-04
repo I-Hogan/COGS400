@@ -7,7 +7,7 @@
 
 import tensorflow as tf
 import numpy as np
-import csv, copy
+import csv, copy, random, math
 
 def readData( file, maxLines ):
 	print "\nreading data..."
@@ -25,7 +25,6 @@ def readData( file, maxLines ):
 				break
 	return data
 
-
 	
 def writeCSV( data, file ):
 	print "\nwriting CSV..."
@@ -38,8 +37,8 @@ def writeCSV( data, file ):
 			line = line[:-1] + "\n"
 			data_file.write(line)
 	
-def splitData( labelColumn, data ):
-	print "\nspliting data..."
+def splitLabels( labelColumn, data ):
+	#print "\nspliting data..."
 	label, rows = [], []
 	for row in range(len(data)):
 		label.append([data[row][labelColumn - 1]])
@@ -68,48 +67,50 @@ def addTimeRating( data ):
 	print "\nadding rating at review time..."
 	data.sort(key=lambda x: x[3])
 	newData = []
-	dataLen = len(data)
-	current = 0
+	movieIDs = [int(x[1]) for x in data]
+	movieIDs = dict.fromkeys(movieIDs)
+	counter = 0
+	for movie in movieIDs:
+		movieIDs[movie] = [0,0]
 	for row in data:
-		current += 1
-		print current, "of", dataLen
-		movieID = row[1]
-		timestamp = row[3]
-		movieReviews = 0
-		totalReview = 0
-		for row2 in data:
-			if timestamp > row2[3]:
-				if movieID == row2[1]:
-					movieReviews += 1
-					totalReview += row2[2]
-			else:
-				break
-		if movieReviews == 0:
+		counter += 1
+		if counter % 100000 == 0:
+			print "row:", counter
+		movie = row[1]
+		if movieIDs[movie][0] == 0:
 			newData.append(row + [0])
 		else:
-			newData.append(row + [float(totalReview) / float(movieReviews)])
+			newData.append(row + [float(movieIDs[movie][1]) / float(movieIDs[movie][0])])
+		movieIDs[movie][0] += 1
+		movieIDs[movie][1] += row[2]
 	return newData
 		
 def addAvgRating( data ):
 	print "\nadding average rating..."
 	newData = []
-	dataLen = len(data)
-	current = 0
+	movieIDs = [int(x[1]) for x in data]
+	movieIDs = dict.fromkeys(movieIDs)
+	counter = 0
+	for movie in movieIDs:
+		movieIDs[movie] = [0,0]
 	for row in data:
-		current += 1
-		print current, "of", dataLen
-		movieID = row[1]
-		movieReviews = 0
-		totalReview = 0
-		for row2 in data:
-			if movieID == row2[1]:
-				movieReviews += 1
-				totalReview += row2[2]
-		if movieReviews == 0:
+		counter += 1
+		if counter % 100000 == 0:
+			print "row:", counter
+		movie = row[1]
+		movieIDs[movie][0] += 1
+		movieIDs[movie][1] += row[2]
+	counter = 0
+	for row in data:
+		counter += 1
+		if counter % 100000 == 0:
+			print "row:", counter
+		movie = row[1]
+		if movieIDs[movie][0] == 0:
 			newData.append(row + [0])
 		else:
-			newData.append(row + [float(totalReview) / float(movieReviews)])
-	return newData		
+			newData.append(row + [float(movieIDs[movie][1]) / float(movieIDs[movie][0])])
+	return newData	
 	
 #removes a column from a dataset
 def removeCol(matrix, address):
@@ -121,6 +122,16 @@ def removeCol(matrix, address):
 				newMatrix[row].append(matrix[row][col])
 	return newMatrix
 	
+def splitData( data, testProb ):
+	trainData, testData = [], []
+	dataCopy = copy.deepcopy(data)
+	for row in data:
+		if random.random() < testProb:
+			testData.append(row)
+		else:
+			trainData.append(row)
+	return trainData, testData
+	
 #Usage = trainModel( <lables_list>, <data_rows_list>, <#_hidden_nodes>, <learning_rate>, <#_training_epocs> )
 #Returns: python list of all weights 	
 def trainModel( labels, rows, hidden, learnRate, batchSize, epochs ):
@@ -128,7 +139,7 @@ def trainModel( labels, rows, hidden, learnRate, batchSize, epochs ):
 	print "\ntraining model..."
 	
 	#input data and labels
-	row = tf.placeholder(shape=(1,3), dtype=tf.float64, name='row')
+	row = tf.placeholder(shape=(1,len(rows[0])), dtype=tf.float64, name='row')
 	label = tf.placeholder(shape=(1,1), dtype=tf.float64, name='label')
 	
 	#weights
@@ -161,6 +172,10 @@ def trainModel( labels, rows, hidden, learnRate, batchSize, epochs ):
 				batchLabels = labels[(batchID * batchSize) : ((batchID + 1) * batchSize)]
 				for adr in range(batchSize):
 					sess.run(train, feed_dict={row: [batchRows[adr]], label: [batchLabels[adr]]})
+				print "Squared_Error", sess.run(squaredError,feed_dict={row: [batchRows[adr]], label: [batchLabels[adr]]})
+				print "Loss", sess.run(loss,feed_dict={row: [batchRows[adr]], label: [batchLabels[adr]]})
+				print "Class", sess.run(classif,feed_dict={row: [batchRows[adr]], label: [batchLabels[adr]]})
+				print "Label", sess.run(label,feed_dict={row: [batchRows[adr]], label: [batchLabels[adr]]})
 				#print "batch:", batchID + 1
 			model = sess.run(W1), sess.run(W2), sess.run(B1), sess.run(B2)
 			MSE = testModel( labels, rows, model, hidden)	
@@ -170,7 +185,7 @@ def trainModel( labels, rows, hidden, learnRate, batchSize, epochs ):
 def testModel( labels, rows, weights, hidden ):
 
 	#input and label data
-	row = tf.placeholder(shape=(1,3), dtype=tf.float64, name='row')
+	row = tf.placeholder(shape=(1,len(rows[0])), dtype=tf.float64, name='row')
 	label = tf.placeholder(shape=(1,1), dtype=tf.float64, name='label')
 	
 	#weights
@@ -183,7 +198,7 @@ def testModel( labels, rows, weights, hidden ):
 	
 	#define net flow
 	H1 = tf.sigmoid(tf.matmul(row, W1) + B1)
-	classif = tf.sigmoid(tf.matmul(H1, W2))
+	classif = tf.sigmoid(tf.matmul(H1, W2) + B2)
 	
 	#loss and error functions
 	squaredError = tf.square(label - classif)
@@ -202,22 +217,35 @@ def testModel( labels, rows, weights, hidden ):
 # constants
 filename = "./data/ratings_small.csv"
 hidden = 4
-lrate = 1
+lrate = 0.01
 batch_size = 1000
 epochs = 1
-label_column = 3
+label_column = 2
+training_split = 0.2
 
-ratings_data = readData( "../project_data/ratings.csv", 1000000 )
+#for converting ratings.cvs
+#ratings_data = readData( "../project_data/ratings.csv", 10000000 )
+ratings_data = readData( filename, 10000000 )
 ratings_data = addAvgRating( ratings_data )
 ratings_data = addTimeRating( ratings_data )
-writeCSV( ratings_data, ".../project_data/ratings_avgs.csv" )
+#writeCSV( ratings_data, "../project_data/ratings_avgs.csv" )
 
-#labels, rows = splitData( label_column, ratings_data )
-#rows = normalize(rows)
-#model = trainModel( labels, rows, hidden, lrate, batch_size, epochs ) 
-#sse = testModel( labels, rows, model, hidden)
-		
-			
+ratings_data =  removeCol(ratings_data, 0) #remove id
+train, test = splitData( ratings_data, 0.2 ) #split train and test sets
+
+trainLabels, trainRows = splitLabels( label_column, train ) #train row/labels
+trainRows = normalize(trainRows) #normalize train rows
+model1 = trainModel( trainLabels, trainRows, hidden, lrate, batch_size, epochs ) 
+testLabels, testRows = splitLabels( label_column, test ) #test row/labels
+mse1 = testModel( testLabels, testRows, model1, hidden )
+
+trainRows = removeCol( trainRows, (len(trainRows[0]) - 1) )
+trainLabels, trainRows = splitLabels( label_column, train ) #train row/labels
+model2 = trainModel( trainLabels, trainRows, hidden, lrate, batch_size, epochs )
+mse2 = testModel( testLabels, testRows, model2, hidden )
+
+#print trainRows
+print "model 1 mean error:", math.sqrt(mse1), "\tmodel 2 mean error:", math.sqrt(mse2)
 			
 			
 			
