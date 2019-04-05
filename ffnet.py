@@ -9,6 +9,7 @@ import tensorflow as tf
 import numpy as np
 import csv, copy, random, math, sys
 
+#reads first maxLines rows of a csv file (all if smaller)
 def readData( file, maxLines ):
 	print "\nreading data..."
 	data = []
@@ -24,11 +25,10 @@ def readData( file, maxLines ):
 		if lineNum >= maxLines:
 			data = data[:maxLines]
 	return data
-
 	
+#writes a list to a CSV file
 def writeCSV( data, file ):
-	print "\nwriting CSV..."
-	data.sort(key=lambda x: x[0])
+	#print "\nwriting CSV..."
 	with open(file, "w") as data_file:
 		for row in data:
 			line = ""
@@ -36,7 +36,13 @@ def writeCSV( data, file ):
 				line += str(element) + ","
 			line = line[:-1] + "\n"
 			data_file.write(line)
+
+#prints a list to a file
+def writeListToFile( list, file ):
+	with open(file, "w") as data_file:
+		data_file.write(str(list))
 	
+#extracts label column from list
 def splitLabels( labelColumn, data ):
 	#print "\nspliting data..."
 	label, rows = [], []
@@ -63,7 +69,8 @@ def normalize(data):
 				data[entry][val] = 0
 	return data
 	
-def addTimeRating( data ):
+#adds rating at time of review, remove movies with < cutoff reviews at time of review
+def addTimeRating( data, cutoff ):
 	print "\nadding rating at review time..."
 	data.sort(key=lambda x: x[3])
 	newData = []
@@ -77,14 +84,13 @@ def addTimeRating( data ):
 		#if counter % 1000000 == 0:
 		#	print "row:", counter
 		movie = row[1]
-		if movieIDs[movie][0] == 0:
-			newData.append(row + [0])
-		else:
+		if movieIDs[movie][0] >= cutoff:
 			newData.append(row + [float(movieIDs[movie][1]) / float(movieIDs[movie][0])])
 		movieIDs[movie][0] += 1
 		movieIDs[movie][1] += row[2]
 	return newData
-		
+	
+#adds average movie ratings
 def addAvgRating( data ):
 	print "\nadding average rating..."
 	newData = []
@@ -122,6 +128,7 @@ def removeCol(matrix, address):
 				newMatrix[row].append(matrix[row][col])
 	return newMatrix
 	
+#splits the data into test and training sets according 
 def splitData( data, testProb ):
 	trainData, testData = [], []
 	dataCopy = copy.deepcopy(data)
@@ -187,6 +194,7 @@ def trainModel( labels, rows, hidden, learnRate, batchSize, epochs ):
 		#print "MSE:", MSE[0][0]
 	return model
 		
+#returns all classifications as well as MSE
 def testModel( labels, rows, weights, hidden ):
 
 	#input and label data
@@ -225,27 +233,39 @@ def testModel( labels, rows, weights, hidden ):
 	return MSE, results
 			
 # constants
-filename = "../project_data/ratings.csv"
+filename = "./data/ratings_small.csv"
+new_data = "./data/ratings_processed_out.csv"
 results_1 = "./results/classification_m1.csv"
 results_2 = "./results/classification_m2.csv"
-hidden = 4
-lrate = 0.1
-batch_size = 1000
+model_1 = "./models/m1.txt"
+model_2 = "./models/m2.txt"
+hidden = 5
+lrate = 0.01
+batch_size = 1000 #batch processing not implemented, used for printing messages
 epochs = 10
-label_column = 2
+label_column = 2 #change this if location of label changes (ie. removeCol)
 training_split = 0.2
-data_size = 100000
+data_size = 500000
+movie_cutoff = 10
 
 #for converting ratings.cvs
 #ratings_data = readData( "../project_data/ratings.csv", 10000000 )
 ratings_data = readData( filename, data_size )
 ratings_data = addAvgRating( ratings_data )
-ratings_data = addTimeRating( ratings_data )
+ratings_data = addTimeRating( ratings_data, movie_cutoff )
 
+print "\nRows of data (total):", len(ratings_data)
 
 ratings_data =  removeCol(ratings_data, 0) #remove id
 train, test = splitData( ratings_data, 0.2 ) #split train and test sets
 
+print "Rows of data (train):", len(train)
+print "Rows of data (test):", len(test)
+
+#write the dataset to CSV file for reproducability
+writeCSV( ratings_data, new_data )
+
+#train and test model1
 trainLabels, trainRows = splitLabels( label_column, train ) #train row/labels
 trainRows = normalize(trainRows) #normalize train rows
 model1 = trainModel( trainLabels, trainRows, hidden, lrate, batch_size, epochs ) 
@@ -253,19 +273,22 @@ testLabels, testRows = splitLabels( label_column, test ) #test row/labels
 testRows = normalize(testRows) #normalize train rows
 mse1, results1 = testModel( testLabels, testRows, model1, hidden )
 
+#train and test model2
 trainRows = removeCol( trainRows, (len(trainRows[0]) - 1) )
 trainLabels, trainRows = splitLabels( label_column, train ) #train row/labels
 model2 = trainModel( trainLabels, trainRows, hidden, lrate, batch_size, epochs )
 mse2, results2 = testModel( testLabels, testRows, model2, hidden )
 
+#write results
 writeCSV( results1, results_1 )
 writeCSV( results2, results_2 )
-writeCSV( ratings_data, "../project_data/ratings_avgs.csv" )
+#writeCSV( ratings_data, "../project_data/ratings_avgs.csv" )
 
-print model1
-print model2
+#write weights
+writeListToFile( model1, model_1 )
+writeListToFile( model2, model_2 )
 
-#print trainRows
+#print mean errors
 print "\nResults:\nmodel1 mean error:", math.sqrt(mse1), "\tmodel2 mean error:", math.sqrt(mse2)
 			
 			
